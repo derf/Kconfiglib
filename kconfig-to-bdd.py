@@ -3,7 +3,13 @@
 import kconfiglib
 import re
 import sys
-from dd.cudd import BDD
+
+cudd = True
+
+if cudd:
+    from dd.cudd import BDD
+else:
+    from dd.autoref import BDD
 
 
 def handle_symbol(symbol):
@@ -33,6 +39,8 @@ def handle_symbol(symbol):
     depends_on = re.sub("&&", "&", depends_on)
     depends_on = re.sub("\|\|", "|", depends_on)
 
+    # Wie diese Bedingung formuliert ist (A -> B, !A | B, B | !A) hat
+    # keinen Einfluss auf die BDD-Struktur
     return (symbol.name, f"{symbol.name} -> ({depends_on})")
 
 
@@ -90,17 +98,34 @@ def main():
 
     constraint = bdd.add_expr(constraint)
 
+    if cudd:
+        # Egal?
+        print("Reordering ...")
+        BDD.reorder(bdd)
+
+    else:
+        # Wichtig! Lesbarkeit++ falls gedumpt wird, Performance vermutlich auch.
+        print("Collecting Garbage ...")
+        bdd.collect_garbage()
+
+        print("Dumping to /tmp/bdd.pdf ...")
+        bdd.dump("/tmp/bdd.pdf")
+
     print("Solving ...")
 
     i = 0
     for solution in bdd.pick_iter(constraint, care_vars=variables):
         i += 1
-        with open(f".config.{i}", "w") as sys.stdout:
+        # print(solution)
+        continue
+        with open(f".config.{i}", "w") as f:
             for k, v in solution.items():
                 if v:
-                    print(f"CONFIG_{k}=y")
+                    print(f"CONFIG_{k}=y", file=f)
                 else:
-                    print(f"# CONFIG_{k} is not set")
+                    print(f"# CONFIG_{k} is not set", file=f)
+
+    print(f"Found {i} solutions")
 
 
 if __name__ == "__main__":
