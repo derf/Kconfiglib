@@ -12,8 +12,11 @@ else:
     from dd.autoref import BDD
 
 
-def handle_symbol(symbol):
+def handle_symbol(symbol, name=None, is_mandatory=False):
     depends_on = kconfiglib.expr_str(symbol.direct_dep)
+
+    if name is None:
+        name = symbol.name
 
     choices = list()
 
@@ -26,22 +29,25 @@ def handle_symbol(symbol):
     depends_on = re.sub("&& <([^>]+)>", "", depends_on)
 
     if depends_on == "n":
-        return (f"# undefined symbol {symbol.name}", None)
+        return (f"# undefined symbol {name}", None)
 
     if depends_on == "y":
-        return (symbol.name, f"# yes symbol {symbol.name}")
+        return (name, f"# yes symbol {name}")
 
     sym_type = kconfiglib.TYPE_TO_STR[symbol.type]
 
     if sym_type != "bool":
-        return (f"# non-bool symbol {symbol.name}", None)
+        return (f"# non-bool symbol {name}", None)
 
     depends_on = re.sub("&&", "&", depends_on)
     depends_on = re.sub("\|\|", "|", depends_on)
 
     # Wie diese Bedingung formuliert ist (A -> B, !A | B, B | !A) hat
     # keinen Einfluss auf die BDD-Struktur
-    return (symbol.name, f"{symbol.name} -> ({depends_on})")
+    if is_mandatory:
+        return (name, f"{name} <-> ({depends_on})")
+    else:
+        return (name, f"{name} -> ({depends_on})")
 
 
 def main():
@@ -60,10 +66,17 @@ def main():
             pre_expressions.append(expr)
 
     for choice in kconf.choices:
-        pre_variables.append(f"_choice_{choice.name}")
+        var_name = f"_choice_{choice.name}"
+        print(choice.__repr__(), choice.is_optional)
+        _, expr = handle_symbol(
+            choice, name=var_name, is_mandatory=not choice.is_optional
+        )
+        if expr:
+            pre_expressions.append(expr)
+        pre_variables.append(var_name)
         symbols = map(lambda sym: sym.name, choice.syms)
         symbols_xor = " ^ ".join(symbols)
-        pre_expressions.append(f"_choice_{choice.name} <-> ({symbols_xor})")
+        pre_expressions.append(f"{var_name} <-> ({symbols_xor})")
 
     print()
     print("Variables:")
@@ -81,7 +94,6 @@ def main():
     for variable in pre_variables:
         if variable[0] != "#":
             variables.append(variable)
-            print(variable)
             variable_count += 1
             bdd.declare(variable)
     print(f"Got {variable_count} variables")
@@ -94,7 +106,6 @@ def main():
             expression_count += 1
             constraint += f" & ({expression})"
     print(f"Got {expression_count} rules")
-    print(f"Constraint: {constraint}")
 
     constraint = bdd.add_expr(constraint)
 
