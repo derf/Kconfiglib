@@ -32,7 +32,7 @@ def handle_symbol(symbol, name=None, is_mandatory=False):
         return (f"# undefined symbol {name}", None)
 
     if depends_on == "y":
-        return (name, f"# yes symbol {name}")
+        return (name, name)
 
     sym_type = kconfiglib.TYPE_TO_STR[symbol.type]
 
@@ -74,9 +74,18 @@ def main():
         if expr:
             pre_expressions.append(expr)
         pre_variables.append(var_name)
-        symbols = map(lambda sym: sym.name, choice.syms)
-        symbols_xor = " ^ ".join(symbols)
-        pre_expressions.append(f"{var_name} <-> ({symbols_xor})")
+        symbols = list(map(lambda sym: sym.name, choice.syms))
+        exactly_one = list()
+        for sym1 in symbols:
+            subexpr = list()
+            for sym2 in symbols:
+                if sym1 == sym2:
+                    subexpr.append(sym2)
+                else:
+                    subexpr.append(f"!{sym2}")
+            exactly_one.append("(" + " & ".join(subexpr) + ")")
+        exactly_one = " | ".join(exactly_one)
+        pre_expressions.append(f"{var_name} <-> ({exactly_one})")
 
     print()
     print("Variables:")
@@ -106,6 +115,8 @@ def main():
             expression_count += 1
             constraint += f" & ({expression})"
     print(f"Got {expression_count} rules")
+    print()
+    print(constraint)
 
     constraint = bdd.add_expr(constraint)
 
@@ -127,8 +138,9 @@ def main():
     i = 0
     for solution in bdd.pick_iter(constraint, care_vars=variables):
         i += 1
-        # print(solution)
-        continue
+        print(solution)
+        if i % 10000:
+            continue
         with open(f".config.{i}", "w") as f:
             for k, v in solution.items():
                 if v:
